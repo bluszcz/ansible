@@ -29,6 +29,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     try:
         import paramiko
+        from paramiko import SSHClient, SSHConfig
         HAVE_PARAMIKO=True
     except ImportError:
         pass
@@ -55,6 +56,23 @@ class Connection(object):
 
         vvv("ESTABLISH CONNECTION FOR USER: %s" % user, host=self.host)
 
+
+
+        #SSHConfig() checks
+        config = SSHConfig()
+        home_directory = os.getenv('HOME')
+        config.parse(open(os.path.join(home_directory, '.ssh/config')))
+        o = config.lookup(self.host)
+
+        if o.has_key('port'):
+            self.port = int(o['port'])
+        if o.has_key('hostname'):
+            self.host = o['hostname']
+        if o.has_key('user'):
+            user = o['user']
+
+
+        #print user,self.host
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
