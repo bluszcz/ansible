@@ -309,8 +309,12 @@ class PlayBook(object):
         host_list = [ h for h in self.inventory.list_hosts(play.hosts)
             if not (h in self.stats.failures or h in self.stats.dark) ]
 
-        if not play.gather_facts:
+        if play.gather_facts is False:
             return {}
+        elif play.gather_facts is None:
+            host_list = [h for h in host_list if h not in self.SETUP_CACHE or 'module_setup' not in self.SETUP_CACHE[h]]
+            if len(host_list) == 0:
+                return {}
 
         self.callbacks.on_setup()
         self.inventory.restrict_to(host_list)
@@ -331,6 +335,7 @@ class PlayBook(object):
         # let runner template out future commands
         setup_ok = setup_results.get('contacted', {})
         for (host, result) in setup_ok.iteritems():
+            self.SETUP_CACHE[host].update({'module_setup': True})
             self.SETUP_CACHE[host].update(result.get('ansible_facts', {}))
         return setup_results
 
@@ -340,6 +345,11 @@ class PlayBook(object):
         ''' run a list of tasks for a given pattern, in order '''
 
         self.callbacks.on_play_start(play.name)
+
+        # if no hosts matches this play, drop out
+        if not self.inventory.list_hosts(play.hosts):
+            self.callbacks.on_no_hosts_matched()
+            return True
 
         # get facts from system
         self._do_setup_step(play)
@@ -376,7 +386,18 @@ class PlayBook(object):
                             break
                 if should_run:
                     if not self._run_task(play, task, False):
+                        # whether no hosts matched is fatal or not depends if it was on the initial step.
+                        # if we got exactly no hosts on the first step (setup!) then the host group
+                        # just didn't match anything and that's ok
                         return False
+
+                host_list = [ h for h in self.inventory.list_hosts(play.hosts)
+                    if not (h in self.stats.failures or h in self.stats.dark) ]
+
+                # if no hosts remain, drop out
+                if not host_list:
+                    self.callbacks.on_no_hosts_remaining()
+                    return False
 
             # run notify actions
             for handler in play.handlers():
@@ -386,5 +407,6 @@ class PlayBook(object):
                     self.inventory.lift_restriction()
 
             self.inventory.lift_also_restriction()
+
         return True
 
